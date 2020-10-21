@@ -1,45 +1,39 @@
-/********************************
-* Title	 : main.c				*
-* Release: alpha				*
-* Creator: Malik				*
-* Created: 25.01.2016 17:00:24	*
-* Changed: 21.10.2020			*
-* MCU	 : ATtiny13A		 	*
-* Clock frequency: 1.2 MHz (int)*
-********************************/
+/************************************
+* Title	 	: main.c				*
+* Release	: 0.1.B					*
+* Creator	: Malik					*
+* Created	: 25.01.2016 17:00:24	*
+* Changed	: 21.10.2020			*
+* MCU	 	: ATtiny13A		 		*
+* Frequency	: 1.2 MHz (int)			*
+************************************/
 
-#define F_CPU 1200000UL
 /******************************** Included files **********************************/
 #include "standard.h"
-#include <util/delay.h>
+/********************************** Definition ************************************/
+#define DISCRETELY
+#define MEAS_NUM	10
 /****************************** Private prototypes ********************************/
 ISR (ADC_vect);
 void init (void);
-void change (void);
 BYTE calc (void);
+void adjust (BYTE);
 /****************************** Private  variables ********************************/
-volatile BYTE control = 0;
-BYTE res[4] = {};
-BYTE result = 0;
+static BYTE control = 0;
+static BYTE step = 0;
+static BYTE mesurment[MEAS_NUM] = {};
+/******************************* Additional Definition ****************************/
+#define CHK_FLAG	control&BIT(0)
+#define SET_FLAG	control |= BIT(0)
+#define CLR_FLAG	control &= ~BIT(0)
 /********************************** Entry point ***********************************/
 int main(void) {
     init();
 /********************************* Endlessly loop *********************************/
     while (1) {
-		if (control&BIT(0)) {
-			control &= ~BIT(0);
-			_delay_ms(1000);
-			ADCSRA |= BIT(ADSC);	/* start ADC */
-		}
-		if (control&BIT(1)) {
-			control &= ~BIT(1);
-			result  =  calc();
-			control |= BIT(2);
-		}
-		if (control&BIT(2)) {
-			control &= ~BIT(2);
-			change();
-			ADCSRA  |= BIT(ADSC);	/* start ADC */
+		if(CHK_FLAG) {
+			CLR_FLAG;
+			adjust(calc());
 		}
     }
 /**********************************************************************************/
@@ -51,41 +45,46 @@ void init (void) {
 	PORTB	=  0;
 	OCR0A	=  1;
 	TCCR0A	=  0x83;				/* Fast-PWM, non-invert mode */
-	TCCR0B	=  0x01;				/* No prescaling (clk/1) */
-	ADMUX	=  0x22;				/* In-ADC2, reference - Vcc, ADLAR=1 */
-	ADCSRA	=  0x8e;				/* ADC - enable, interrupt enable, div8 */
-	ADCSRA	|= BIT(ADSC);			/* start ADC */
+	TCCR0B	=  0x01;				/* No pre-scaling (clock/1) */
+	ADMUX	=  0x22;				/* ADC2(PB4), reference - Vcc, left adjust */
+	ADCSRA	=  0xab;				/* ADC, auto trigger and interrupt are enable, div8 */
+	ADCSRA |=  BIT(ADSC);			/* start ADC */
 	sei();
 }
 /**********************************************************************************/
 BYTE calc (void) {
+	cli();
 	register BYTE i, min;
-	min = res[0];
-	for (i = 1; i < 4; i++) {
-		if (min > res[i]) min = res[i];
+	min = mesurment[0];
+	for (i = 1; i < MEAS_NUM; i++) {
+		if (min > mesurment[i]) min = mesurment[i];
 	}
+	sei();
 	return min;
 }
 /**********************************************************************************/
-void change (void) {
-	register BYTE temp_ocr = OCR0A;
-	if (result==temp_ocr) return;
-	while (result != temp_ocr) {
-		if (result > temp_ocr) temp_ocr++;
-		else temp_ocr--;
-		OCR0A = temp_ocr;
-		_delay_ms(25);
+void adjust (register BYTE result) {
+	register BYTE t_OCR0A = OCR0A;
+	if (result == t_OCR0A) return;
+	while (result != t_OCR0A) {
+		if (result > t_OCR0A) t_OCR0A++;
+		else t_OCR0A--;
+#ifdef DISCRETELY
 	}
+	OCR0A = t_OCR0A;
+#else
+	OCR0A = t_OCR0A;
+	}
+#endif
+	ADCSRA|= (BIT(ADEN)|BIT(ADSC));	/* start ADC */
 }
 /**********************************************************************************/
 ISR (ADC_vect) {
-	static unsigned char step;
-	res[step++]=ADCH;
-	if (step == 4) {
+	mesurment[step] = ADCH;			/* without the last two bits */
+	if (++step == MEAS_NUM) {
 		step = 0;
-		control |= BIT(1);
-		return;
+		ADCSRA&= ~BIT(ADEN);
+		SET_FLAG;
 	}
-	control |= BIT(0);
 }
 /**********************************************************************************/
