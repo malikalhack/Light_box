@@ -13,14 +13,17 @@
 /********************************** Definition ************************************/
 #define DISCRETELY
 #define MEAS_NUM	10
+#define DEF_COUNTER 18
 /****************************** Private prototypes ********************************/
 ISR (ADC_vect);
+ISR (TIM0_OVF_vect);
 void init (void);
 BYTE calc (void);
 void adjust (BYTE);
 /****************************** Private  variables ********************************/
 static BYTE control = 0;
 static BYTE step = 0;
+static BYTE counter = DEF_COUNTER;
 static BYTE mesurment[MEAS_NUM] = {};
 /******************************* Additional Definition ****************************/
 #define CHK_FLAG	control&BIT(0)
@@ -45,9 +48,10 @@ void init (void) {
 	PORTB	=  0;
 	OCR0A	=  1;
 	TCCR0A	=  0x83;				/* Fast-PWM, non-invert mode */
-	TCCR0B	=  0x01;				/* No pre-scaling (clock/1) */
+	TCCR0B	=  0x03;				/* No pre-scaling (clock/64) */
+	TIMSK0  =  0x02;
 	ADMUX	=  0x22;				/* ADC2(PB4), reference - Vcc, left adjust */
-	ADCSRA	=  0xab;				/* ADC, auto trigger and interrupt are enable, div8 */
+	ADCSRA	=  0x8b;				/* ADC and interrupt are enable, div8 */
 	ADCSRA |=  BIT(ADSC);			/* start ADC */
 	sei();
 }
@@ -76,15 +80,20 @@ void adjust (register BYTE result) {
 	OCR0A = t_OCR0A;
 	}
 #endif
-	ADCSRA|= (BIT(ADEN)|BIT(ADSC));	/* start ADC */
 }
 /**********************************************************************************/
 ISR (ADC_vect) {
 	mesurment[step] = ADCH;			/* without the last two bits */
 	if (++step == MEAS_NUM) {
 		step = 0;
-		ADCSRA&= ~BIT(ADEN);
 		SET_FLAG;
+	}
+}
+/**********************************************************************************/
+ISR (TIM0_OVF_vect) {
+	if (!(--counter)) {
+		counter = DEF_COUNTER;
+		ADCSRA |=  BIT(ADSC);
 	}
 }
 /**********************************************************************************/
