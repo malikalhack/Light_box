@@ -70,14 +70,13 @@ BYTE calc (void) {
 void adjust (register BYTE result) {
 	register BYTE t_OCR0A = OCR0A;
 	if (result == t_OCR0A) return;
+#ifdef DISCRETELY
+	OCR0A = result;
+#else
 	while (result != t_OCR0A) {
 		if (result > t_OCR0A) t_OCR0A++;
 		else t_OCR0A--;
-#ifdef DISCRETELY
-	}
-	OCR0A = t_OCR0A;
-#else
-	OCR0A = t_OCR0A;
+		OCR0A = t_OCR0A;
 	}
 #endif
 }
